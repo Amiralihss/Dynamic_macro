@@ -2,7 +2,7 @@ import numpy as np
 from params import Params 
 from grid_data import Grid_data
 from agents import Firm, Household
-from steady_state import *
+from steady_state import Steady_state
 from scipy import interpolate,optimize
 
 class Solver:
