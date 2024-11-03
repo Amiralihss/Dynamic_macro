@@ -26,7 +26,7 @@ plt.rcParams.update(params)
 
 solver = Solver()
 
-kgrid, kp_pol, c_pol = solver.solve_egm()
+kgrid, kp_pol, c_pol = solver.solve_egm_stoch_ram()
 
 # In the following, we plot the policy functions for consumption and capital (zooming in the last one)
 

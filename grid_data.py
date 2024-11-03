@@ -13,7 +13,7 @@ class Grid_data:
     #    self.grid = self.time_range.unsqueeze(dim = 1)
 
     def __init__(self,
-                ss_instance,
+                 ss_instance: Steady_state,
                  nk = 21, 
                  nz = 11
                  ):

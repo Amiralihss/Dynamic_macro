@@ -66,15 +66,74 @@ class Solver:
 
         return ee_res
     
+    def sys_of_eqs_rbc(self, n, n_guess ,k, z, i1, nz, kgrid, zgrid, P):
+        ## This function returns the RHS of the Euler equation for given (k,z) and a guess for c
 
-    def solve_egm(self):
+        # Pre-allocation
+        n_p = np.zeros((nz, 1))
+        r_p = np.zeros((nz, 1))
+        w_p = np.zeros((nz, 1))
+        c_p = np.zeros((nz, 1))
+        q_p = np.zeros((nz, 1))
+
+        # Initializing required parameters
+        #alpha = Params().alpha --> alpha has already been initialized by calling the firm
+        param = Params(alpha = 0.33,
+                     beta = 0.99,
+                     delta = 0.025,
+                     )
+        delta = param.delta
+        beta = param.beta
+        sigma = param.sigma
+        gamma = param.alpha
+        ss = Steady_state(param, labour = True)
+        chi = ss.chi
+
+        # Initializing agents
+        firm = Firm(labour = True)
+        household = Household(labour = True)
+        irate = firm.mpk(z, k, param, l = n)
+        wage = firm.mpl(z, k, n, param)
+        
+        # TODO check this equation for mu_c = mu_n what's written here seems to be wrong, Also add chi
+        
+        #con = wage / (chi * n ** gamma)#
+        # My suggestion : 
+        con = (wage/(-household.mu_l_sep(n, param, chi)))#**(1.0/-sigma)
+        outp = firm.f(z, k, param, l = n) 
+        invest = outp - con
+
+        k_p = invest + (1.0 - delta) * k
+
+        for iz in range(nz):
+
+            n_interp = interpolate.interp1d(
+                kgrid, n_guess[:, iz], kind="linear", fill_value="extrapolate"
+            )
+            n_p[iz] = n_interp(k_p)
+            r_p[iz] = (
+                firm.mpk(zgrid[iz], k_p, param, l = n_p[iz])
+            )
+            w_p[iz] = firm.mpl(np.exp(zgrid[iz]), k_p, n_p[iz], param) 
+            c_p[iz] = (w_p[iz] / (chi * n_p[iz] ** gamma))#**(-1.0/param.sigma)
+            q_p[iz] = beta * con / c_p[iz]
+
+        ee_sum = P[i1, :] @ (q_p[:] * (r_p[:] + 1.0 - delta))
+
+        ee_res = 1.0 - ee_sum
+
+        return ee_res
+
+
+    def solve_egm_stoch_ram(self):
         """
         TBA: describing the algorithm
         """
 
+        # TODO: how to make it versatile for other methods
         ## Pre-Allocation
         param = Params()
-        ss = Steady_state_stoch_ram(param)
+        ss = Steady_state(param)
         # Initializing Grid
         grid = Grid_data(ss)
         nz = grid.nz
@@ -91,8 +150,6 @@ class Solver:
         firm = Firm()
         #household = Household()
         ## Guess for consumption
-
-        
         c_guess = np.zeros((nk,nz))
         c_guess[:,:] = ss.c_ss
 
@@ -109,7 +166,7 @@ class Solver:
                     # iz --> function input i1
                     # need to add
                     # nz, kgrid(done), zgrid(done), P(done)
-                    root = optimize.fsolve(self.sys_of_eqs, c_guess[ik,iz], args=(c_guess, kgrid[ik], zgrid[iz], iz, nz, kgrid, zgrid, P))
+                    root = optimize.fsolve(self.sys_of_eqs_stoch_ram, c_guess[ik,iz], args=(c_guess, kgrid[ik], zgrid[iz], iz, nz, kgrid, zgrid, P))
                     c_pol[ik,iz] = root
 
             metric = np.amax(np.abs(c_pol-c_guess))
@@ -130,6 +187,76 @@ class Solver:
             kp_pol[:,iz] = firm.f(zgrid[iz], kgrid, param) + (1.0-delta)*kgrid - c_pol[:,iz]
 
         return kgrid, kp_pol, c_pol
+
+
+    def solve_egm_rbc(self):
+
+        """
+        explain algorithm
+        """
+        ## Pre-Allocation
+        param = Params(alpha = 0.33,
+                     beta = 0.99,
+                     delta = 0.025,
+                     )
+        ss = Steady_state(param, labour= True)
+        # Initializing Grid
+        grid = Grid_data(ss)
+        nz = grid.nz
+        nk = grid.nk
+        kgrid, zgrid, P = grid.setup_grid_egm()
+        
+        # Initializing required parameters
+        alpha = param.alpha
+        delta = param.delta
+        gamma = param.gamma
+        sigma = param.sigma
+        chi = ss.chi
+        maxiter = param.maxiter
+        tol = param.tol
+
+        # Initializing agents
+        firm = Firm(labour = True)
+        household = Household(labour = True)
+        ## Guess for consumption
+        n_guess = np.zeros((nk,nz))
+        n_guess[:,:] = ss.n_ss
+        n_pol = np.zeros((nk, nz))
+
+        for iter0 in range(1000):
+
+            for ik in range(nk):
+                for iz in range(nz):
+                    root = optimize.fsolve(
+                        self.sys_of_eqs_rbc, n_guess[ik, iz], args=(n_guess, kgrid[ik], zgrid[iz], iz, nz, kgrid, zgrid, P)
+                    )
+                    n_pol[ik, iz] = root
+
+            metric = np.amax(np.abs(n_pol - n_guess))
+            print(iter0, metric)
+            if metric < 1e-5:
+                break
+
+            n_guess[:] = n_pol
+
+
+# Compute the policy functions for consumption and next period's capital
+
+        c_pol = np.zeros((nk, nz))
+        kp_pol = np.zeros((nk, nz))
+
+        for iz in range(nz):
+
+            wage = firm.mpl(zgrid[iz], kgrid, n_pol[:, iz], param)
+            # TODO check this equation for mu_c = mu_n what's written here seems to be wrong, Also add chi
+            # c_pol[:, iz] = wage / (chi * n_pol[:, iz] ** gamma)
+            c_pol[:, iz] = (wage/(-household.mu_l_sep(n_pol[:, iz], param, chi)))#**(1.0/-sigma)
+            outp = firm.f(zgrid[iz], kgrid, param, l = n_pol[:, iz]) 
+            invest = outp - c_pol[:, iz]
+            kp_pol[:, iz] = invest + (1.0 - delta) * kgrid
+        
+        return kgrid, zgrid, P, kp_pol, n_pol, c_pol, wage, outp, invest
+
 
     def solve_neural_network(self):
         """

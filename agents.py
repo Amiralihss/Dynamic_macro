@@ -1,5 +1,6 @@
 
 import numpy as np
+from params import Params
 
 class Firm:
     def __init__(self, 
@@ -43,7 +44,7 @@ class Firm:
         #    """Returns a string representation of the parameters."""
         #    return f"Params({self.parameters})"
     
-    def f(self, z, k, param, **kwargs):
+    def f(self, z, k, param: Params, **kwargs):
         """
         A Cobb-Douglas production function based on stochastic shock 'z' and capital stock `k`, 
         and optionally `l` if `labour` is True.
@@ -74,7 +75,7 @@ class Firm:
         else:
             return np.exp(z)*k**alpha
     
-    def mpk(self, z, k, param, **kwargs):
+    def mpk(self, z, k, param: Params, **kwargs):
         """
         Calculates the marginal productivity of capital based on stochastic shock 'z' and capital stock `k`, 
         and optionally `l` if `labour` is True.
@@ -105,7 +106,7 @@ class Firm:
             return np.exp(z)*alpha*k**(alpha-1.0)
     
     
-    def mpl(self, z, k, l, param):
+    def mpl(self, z, k, l, param: Params):
         """
         Calculates the firms marginal productivity of labour based on stochastic shock 'z' and capital stock `k`, 
         and `l`. This function can only be called if labour is true
@@ -132,6 +133,7 @@ class Firm:
 
 class Household:
     # TODO Create a function for budget constraint
+    # TODO define chi
     def __init__ (self,
                  labour = False,
                  *args,
@@ -161,7 +163,7 @@ class Household:
         #    """Returns a string representation of the parameters."""
         #    return f"Params({self.parameters})"
         
-    def u_sep(self, c, param,**kwargs):
+    def u_sep(self, c, param: Params,**kwargs):
         """
         A 'Constant Relative Risk Aversion' function with separable preferences based on consumption and optionally `l` if `labour` is True.
         Args:
@@ -199,7 +201,7 @@ class Household:
             else:
                 return (c**(1.0-sigma) - 1.0)/(1.0-sigma)
     
-    def mu_c_sep(self, c, param,**kwargs):
+    def mu_c_sep(self, c, param: Params,**kwargs):
         """
         Calculates the marginal utility from consumption from the CRRA Utility with separable preferences
         Args:
@@ -217,7 +219,7 @@ class Household:
         else:
             return c**(1.0-sigma)
         
-    def mu_l_sep(self, l, param, chi): 
+    def mu_l_sep(self, l, param: Params, chi): 
        """
         Calculates marginal utility of labour of a CRRA utility function with separable preferences
         Args:
@@ -231,6 +233,6 @@ class Household:
        if not self.labour:
             raise RuntimeError("This method can only be called when 'labour' is True.")
        gamma = param.gamma
-       return -chi*l**(1.0+gamma)/(1.0+gamma)
+       return -chi*l**(gamma)
 
     pass
