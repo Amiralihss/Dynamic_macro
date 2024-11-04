@@ -26,7 +26,22 @@ class Solver:
         
         """
         This function returns the RHS of the Euler equation from the stochastic ramsey model. for given (k,z) and a guess for c
-        TBA: Explain what is done here for docstring
+            - for a pair (k_t, z_t) we guess c_guess_t = h_1(k_t,z_t)
+            - get k_{t+1} from Budget constraint where for the pair (k_t, z_t) and c_guess_t
+            - Compute c_{t+1} = h_1(k_{t+1}, z_{t+1}) by interpolating guess for h_1 at query point (k_{t+1}, z_{t+1})
+            - Compute RHS of the Euler equation by using the transition matrix P(z_{t+1}|z_t) which is calculated using tauchen
+            - Goal of getting the RHS of the Euler equation is to find the updated guess for consumption (c_guess_t) given the parameters 
+              calculated above the RHS is equal to zero (more on this in Solve_TI_stoch_ram)
+        Args:
+            c (float): the c_t which will be updated from the RHS of Euler Equation.
+            c_guess (float array): the initial guess for c_t
+            k (float): the given k_t from the pair (k_t, z_t) in the state space
+            z (float): the given z_t from the pair (k_t, z_t) in the state space
+            i1 (int): index of the stochastic state that we are finding ourselves in
+            nz (int): number of stochastic shocks
+            kgrid (float array): our k state space
+            zgrid (float array): grid of stochastic shocks
+            P(numpy array) : Transition matrix from tauchen 
         Returns:
             ee_res(float): RHS of Euler equation
         """ 
@@ -49,17 +64,26 @@ class Solver:
         q_p = np.zeros((nz,1))
         
         # Retrieve k_{t+1} from the budget constraint
+        # Calculate k_{t+1} = h2(k_{t}, z_{t}) using guess for consumptions
         k_p = firm.f(z,k,param) + (1.0-delta)*k - c
 
+        # since we are in a stochastic case, we need to find the policy functions for all possible stochastic schocks --> iz in nz
+        # e.g. given a bad state consumption is like this otherwise like that
         for iz in range(nz):
+            # get c_{t+1} by interpolating guess (c_guess) at K_{t+1} for every z_{t+1}(iz) 
             c_interp = interpolate.interp1d(kgrid, c_guess[:,iz], kind='linear', fill_value='extrapolate')
+            
+            # c_{t+1} at a certain z_{t+1} --> c_p[iz] 
             c_p[iz] = c_interp(k_p)
+            
             ## RHS of Euler without expected value
             # manually putting mu_c for log utility case --> c = c_t and c_p[iz] = c_{t+1} 
-            q_p[iz] = beta*c/c_p[iz]*(firm.mpk(zgrid[iz],k_p,param) + 1.0 - delta)
             
+            # c is the unknown parameter here that we want to estimate by setting the RHS of euler equation to zero to get the updated
+            # consumption policy function (c_t = h1(k_t, z_t))
             # using mu_c function from household class
-            q_p[iz] = beta*household.mu_c_sep(c_p[iz],param)/household.mu_c_sep(c,param)*(firm.mpk(zgrid[iz],k_p,param) + 1.0 - delta)
+            q_p[iz] = beta*household.mu_c_sep(c_p[iz],param)/household.mu_c_sep(c ,param)*(firm.mpk(zgrid[iz],k_p,param) + 1.0 - delta)
+        
         ee_sum = P[i1,:] @ q_p[:]
 
         ee_res = 1.0 - ee_sum
@@ -125,9 +149,16 @@ class Solver:
         return ee_res
 
 
-    def solve_egm_stoch_ram(self):
+    def solve_TI_stoch_ram(self):
         """
-        TBA: describing the algorithm
+        This function solves the stochastic ramsey model using Time Iteration algorithm
+            - for all `k` in the `kgrid` space (`kgrid[ik]`)
+            - calculate the `c_t` that is the root of the `sys_of_eqs_stoch_ram` given every single stochastic state `z_t` possible (`zgrid[iz]`)
+            - the resulting `c_t` (`c_pol`) is going to be our updated `c_guess` if the algorithm doesn't converge and the process goes on
+        Returns:
+            - kgrid(array) : The capital state space
+            - kp_pol(array) : Capital poilcy function for every point in K x Z state space : `k_{t+1}`
+            - c_pol(array) : The consumption policy function for every point K x Z state space: `c_t` 
         """
 
         # TODO: how to make it versatile for other methods
@@ -157,22 +188,23 @@ class Solver:
         c_pol = np.zeros((nk,nz))
 
         for iter0 in range(maxiter):
-
+            # we want to find policy functions for all k in k grid state space
             for ik in range(nk):
+                # for all stochastic shocks there needs to be a corresponding policy
                 for iz in range(nz):
-                    # c_guess[ik,iz] is the initial value where the root finding algorithm starts
-                    # kgrid[ik] --> function input k 
-                    # zgrid[iz] --> function input z
-                    # iz --> function input i1
-                    # need to add
-                    # nz, kgrid(done), zgrid(done), P(done)
+                    # find c_t s.t. the euler equation is equal to 0 use c_guess as c_t 
                     root = optimize.fsolve(self.sys_of_eqs_stoch_ram, c_guess[ik,iz], args=(c_guess, kgrid[ik], zgrid[iz], iz, nz, kgrid, zgrid, P))
+                    # set the c_t from the root finding process as the new guess
                     c_pol[ik,iz] = root
 
+            # evaluate whether update is marginal
             metric = np.amax(np.abs(c_pol-c_guess))
+            
             print(iter0,metric)
+            
             if (metric<tol):
                 break
+            # update the guess and continue with root finding
             c_guess[:] = c_pol
 
         # Compute next period's capital for all grid points
@@ -189,7 +221,7 @@ class Solver:
         return kgrid, kp_pol, c_pol
 
 
-    def solve_egm_rbc(self):
+    def solve_TI_rbc(self):
 
         """
         explain algorithm
