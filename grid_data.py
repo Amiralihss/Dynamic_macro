@@ -27,7 +27,7 @@ class Grid_data:
     #kgrid = np.linspace(self.k_min,self.k_max,self.nk)
     #    zgrid,P = tc.approx_markov(Params().rho_z, Params().sig_e, 2, self.nz)
 
-    def setup_grid_egm(self):  
+    def setup_grid_TI(self):  
         k_min = self.k_min 
         k_max = self.k_max 
         nk = self.nk 
