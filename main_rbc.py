@@ -32,7 +32,7 @@ plt.rcParams.update(params)
 
 solver = Solver()
 
-kgrid, zgrid, P, kp_pol, n_pol, c_pol, wage, outp, invest = solver.solve_egm_rbc()
+kgrid, zgrid, P, kp_pol, n_pol, c_pol, wage, outp, invest = solver.solve_TI_rbc()
 
 # Plot: Policy function for labor supply
 
