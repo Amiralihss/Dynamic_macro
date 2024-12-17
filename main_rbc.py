@@ -5,14 +5,12 @@ import statsmodels.tsa.filters.hp_filter as hp
 from solver import Solver
 from params import Params
 from steady_state import Steady_state
-from grid_data import Grid_data
+# from grid_data import Grid_data
 import numpy as np
 from scipy import interpolate
 from agents import *
 
-# TeX Fonts for plots
-# plt.rc('text', usetex=True)
-# plt.rc('font', family='serif')
+
 fontsize= 14
 ticksize = 14
 figsize = (12, 4.5)

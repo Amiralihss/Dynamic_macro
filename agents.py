@@ -217,7 +217,7 @@ class Household:
         if sigma == 1:
             return 1.0/c
         else:
-            return c**(1.0-sigma)
+            return c**(-sigma)
         
     def mu_l_sep(self, l, param: Params, chi): 
        """
@@ -235,4 +235,3 @@ class Household:
        gamma = param.gamma
        return -chi*l**(gamma)
 
-    pass

@@ -88,7 +88,7 @@ class Solver:
 
         return ee_res
     
-    def sys_of_eqs_rbc(self, n, n_guess ,k, z, i1, nz, kgrid, zgrid, P):
+    def sys_of_eqs_rbc(self, n, n_guess ,k, z, i1, nz, kgrid, zgrid, P, ss: Steady_state, param: Params, firm: Firm, household: Household):
         """
         **Algorithm**:
             - The function first calculates key variables like the interest rate (`irate`), wage (`wage`), consumption (`con`),
@@ -126,20 +126,13 @@ class Solver:
 
         # Initializing required parameters
         #alpha = Params().alpha --> alpha has already been initialized by calling the firm
-        param = Params(alpha = 0.33,
-                     beta = 0.99,
-                     delta = 0.025,
-                     )
         delta = param.delta
         beta = param.beta
         sigma = param.sigma
-        gamma = param.alpha
-        ss = Steady_state(param, labour = True)
+        gamma = param.gamma
         chi = ss.chi
 
         # Initializing agents
-        firm = Firm(labour = True)
-        household = Household(labour = True)
 
         # our n is here the n_t that we want to find so that this sys of equation is solved
         # we start by setting n = n_guess then update it step by step
@@ -165,7 +158,7 @@ class Solver:
             
             # given this n_p and k_p calculate all the other variables necessary
             r_p[iz] = firm.mpk(zgrid[iz], k_p, param, l = n_p[iz])
-            w_p[iz] = firm.mpl(np.exp(zgrid[iz]), k_p, n_p[iz], param) 
+            w_p[iz] = firm.mpl(zgrid[iz], k_p, n_p[iz], param) 
             
             # consumption choice from intratemporal labour consumption choice
             c_p[iz] = (w_p[iz] / (chi * n_p[iz] ** gamma))#**(-1.0/param.sigma)
@@ -176,7 +169,6 @@ class Solver:
 
         # The rhs of the euler equation (calculating expected value) (2)
         ee_sum = P[i1, :] @ (q_p[:] * (r_p[:] + 1.0 - delta))
-
         # last step of calculating the rhs of the euler equation (3)
         ee_res = 1.0 - ee_sum
 
@@ -325,7 +317,7 @@ class Solver:
                     # the optimal labour supply is the root of the sys of equation resulting from the FOCs
                     # start the root finding algorithm with n_guess
                     root = optimize.fsolve(
-                        self.sys_of_eqs_rbc, n_guess[ik, iz], args=(n_guess, kgrid[ik], zgrid[iz], iz, nz, kgrid, zgrid, P)
+                        self.sys_of_eqs_rbc, n_guess[ik, iz], args=(n_guess, kgrid[ik], zgrid[iz], iz, nz, kgrid, zgrid, P, ss, param, firm, household)
                     )
                     n_pol[ik, iz] = root
 

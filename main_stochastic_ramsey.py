@@ -4,9 +4,6 @@ import matplotlib.pyplot as plt
 # import statsmodels.tsa.filters.hp_filter as hp
 from solver import Solver
 
-# TeX Fonts for plots
-# plt.rc('text', usetex=True)
-# plt.rc('font', family='serif')
 fontsize= 14
 ticksize = 14
 figsize = (12, 4.5)
