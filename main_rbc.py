@@ -9,6 +9,8 @@ from steady_state import Steady_state
 import numpy as np
 from scipy import interpolate
 from agents import *
+from scipy.interpolate import RegularGridInterpolator
+
 
 
 fontsize= 14
@@ -33,7 +35,7 @@ solver = Solver()
 kgrid, zgrid, P, kp_pol, n_pol, c_pol, wage, outp, invest = solver.solve_TI_rbc()
 
 # Plot: Policy function for labor supply
-
+print(len(c_pol))
 fig, ax = plt.subplots(figsize=(12, 7))
 ax.plot(kgrid, n_pol[:, 0], color="darkblue", linewidth=3, label="$N(K,z_{1})$")
 ax.plot(kgrid, n_pol[:, 5], color="blue", linewidth=3, label="$N(K,z_{6})$")
@@ -92,6 +94,7 @@ beta = param.beta
 delta = param.delta
 sigma = param.sigma
 gamma = param.gamma
+rho = param.rho_z
 chi = ss.chi
 
 seed = 7122020
@@ -233,3 +236,91 @@ print("Hours = " + str(n_autocorr))
 print("Wage = " + str(w_autocorr))
 print("Interest rate = " + str(r_autocorr))
 
+### Impulse response function
+
+
+
+
+
+# Create the interpolating function
+consumption_interp = RegularGridInterpolator((kgrid, zgrid), c_pol, method='linear')
+
+def consumption_policy_func(k, z):
+    return consumption_interp((k, z))
+
+labour_interp = RegularGridInterpolator((kgrid, zgrid), n_pol, method='linear')
+def labour_policy_func(k, z):
+    return labour_interp((k, z))
+# Simulation parameters
+T = 400  # number of periods
+
+# Steady state values (should be computed from your model)
+k_ss = ss.k_ss     # example steady state for capital
+z_ss = 0.0     # example steady state for shock
+
+# Set a shock (for example, a positive shock at t=0)
+z_shock = 0.05
+
+# Initialize arrays to store the simulated variables
+k_sim = np.zeros(T)
+z_sim = np.zeros(T)
+c_sim = np.zeros(T)
+n_sim = np.zeros(T)
+# Set initial conditions
+k_sim[0] = k_ss
+z_sim[0] = z_shock  # applying the shock in period 0
+
+# Suppose you also have a policy function for capital (here assumed to be defined similarly)
+capital_interp = RegularGridInterpolator((kgrid, zgrid), kp_pol, method='linear')
+
+def capital_policy_func(k, z):
+    return capital_interp((k, z))
+
+# Simulate the dynamics
+for t in range(1, T):
+    # Update capital using the capital policy function
+    k_sim[t] = capital_policy_func(k_sim[t-1], z_sim[t-1])
+    
+    # Update the shock:
+    # Option 1: Assume the shock reverts immediately after period 0
+    #z_sim[t] = z_ss
+    # Option 2: If you want to simulate the AR(1) process, incorporate its dynamics here.
+    z_sim[t] = (1 - rho)*z_ss + rho * z_sim[t-1]
+
+    n_sim[t-1] = labour_policy_func(k_sim[t-1], z_sim[t-1])
+    # Compute consumption using the consumption policy function
+    c_sim[t-1] = consumption_policy_func(k_sim[t-1], z_sim[t-1])
+
+# For the final period (if needed)
+c_sim[-1] = consumption_policy_func(k_sim[-1], z_sim[-1])
+n_sim[-1] = labour_policy_func(k_sim[-1], z_sim[-1])
+# Plot the impulse response functions
+time = np.arange(T)
+# Plot Capital IRF on its own figure
+plt.figure(figsize=(8, 4))
+plt.plot(time, k_sim, label='Capital', color='blue')
+plt.xlabel('Time Periods')
+plt.ylabel('Capital')
+plt.title('Impulse Response Function: Capital')
+plt.legend()
+plt.grid(True)
+plt.show()
+
+# Plot Consumption IRF on its own figure
+plt.figure(figsize=(8, 4))
+plt.plot(time, c_sim, label='Consumption', color='orange')
+plt.xlabel('Time Periods')
+plt.ylabel('Consumption')
+plt.title('Impulse Response Function: Consumption')
+plt.legend()
+plt.grid(True)
+plt.show()
+
+plt.figure(figsize=(8, 4))
+plt.plot(time, n_sim, label='Labour', color='orange')
+plt.xlabel('Time Periods')
+plt.ylabel('Labour')
+plt.title('Impulse Response Function: Labour')
+plt.legend()
+plt.grid(True)
+plt.show()

@@ -141,7 +141,7 @@ class Solver:
         # TODO check this equation for mu_c = mu_n what's written here seems to be wrong, Also add chi
         #con = wage / (chi * n ** gamma)#
         # My suggestion : 
-        con = (wage/(-household.mu_l_sep(n, param, chi)))#**(1.0/-sigma)
+        con = (-household.mu_l_sep(n, param, chi)/wage)**(1.0/-sigma) 
         outp = firm.f(z, k, param, l = n) 
         invest = outp - con
 
