@@ -4,6 +4,9 @@ from grid_data import Grid_data
 from agents import Firm, Household
 from steady_state import *
 from scipy import interpolate,optimize
+from equation_system import EquationSystem
+import scipy.sparse as ssp
+from scipy.linalg import eig
 
 class Solver:
     def __init__(self):
@@ -22,71 +25,6 @@ class Solver:
     #    # Initialize or set up grid parameters here
     #    pass
     
-    def sys_of_eqs_stoch_ram(self, c, c_guess, k, z, i1, nz, kgrid, zgrid, P):
-        
-        """
-        This function returns the RHS of the Euler equation from the stochastic ramsey model. for given (k,z) and a guess for c
-            - for a pair (k_t, z_t) we guess c_guess_t = h_1(k_t,z_t)
-            - get k_{t+1} from Budget constraint where for the pair (k_t, z_t) and c_guess_t
-            - Compute c_{t+1} = h_1(k_{t+1}, z_{t+1}) by interpolating guess for h_1 at query point (k_{t+1}, z_{t+1})
-            - Compute RHS of the Euler equation by using the transition matrix P(z_{t+1}|z_t) which is calculated using tauchen
-            - Goal of getting the RHS of the Euler equation is to find the updated guess for consumption (c_guess_t) given the parameters 
-              calculated above the RHS is equal to zero (more on this in Solve_TI_stoch_ram)
-        Args:
-            c (float): the c_t which will be updated from the RHS of Euler Equation.
-            c_guess (float array): the initial guess for c_t
-            k (float): the given k_t from the pair (k_t, z_t) in the state space
-            z (float): the given z_t from the pair (k_t, z_t) in the state space
-            i1 (int): index of the stochastic state that we are finding ourselves in
-            nz (int): number of stochastic shocks
-            kgrid (float array): our k state space
-            zgrid (float array): grid of stochastic shocks
-            P(numpy array) : Transition matrix from tauchen 
-        Returns:
-            ee_res(float): RHS of Euler equation
-        """ 
-
-        ## Pre-allocation
-        #nz = Grid_data().nz
-        #kgrid, zgrid, P = Grid_data().setup_grid_egm()
-        
-        # Initializing required parameters
-        #alpha = Params().alpha --> alpha has already been initialized by calling the firm
-        param = Params()
-        delta = param.delta
-        beta = param.beta
-
-        # Initializing agents
-        firm = Firm()
-        household = Household()
-
-        c_p = np.zeros((nz,1))
-        q_p = np.zeros((nz,1))
-        
-        # Retrieve k_{t+1} from the budget constraint
-        # Calculate k_{t+1} = h2(k_{t}, z_{t}) using guess for consumptions
-        k_p = firm.f(z,k,param) + (1.0-delta)*k - c
-
-        # since we are in a stochastic case, we need to find the policy functions for all possible stochastic schocks --> iz in nz
-        # e.g. given a bad state consumption is like this otherwise like that
-        for iz in range(nz):
-            # get c_{t+1} by interpolating guess (c_guess) at K_{t+1} for every z_{t+1}(iz) 
-            c_interp = interpolate.interp1d(kgrid, c_guess[:,iz], kind='linear', fill_value='extrapolate')
-            
-            # c_{t+1} at a certain z_{t+1} --> c_p[iz] 
-            c_p[iz] = c_interp(k_p)
-            ## RHS of Euler without expected value
-            # manually putting mu_c for log utility case --> c = c_t and c_p[iz] = c_{t+1} 
-            # c is the unknown parameter here that we want to estimate by setting the RHS of euler equation to zero to get the updated
-            # consumption policy function (c_t = h1(k_t, z_t))
-            # using mu_c function from household class
-            q_p[iz] = beta*household.mu_c_sep(c_p[iz],param)/household.mu_c_sep(c ,param)*(firm.mpk(zgrid[iz],k_p,param) + 1.0 - delta)
-        
-        ee_sum = P[i1,:] @ q_p[:]
-
-        ee_res = 1.0 - ee_sum
-
-        return ee_res
     
     def sys_of_eqs_rbc(self, n, n_guess ,k, z, i1, nz, kgrid, zgrid, P, ss: Steady_state, param: Params, firm: Firm, household: Household):
         """
@@ -174,7 +112,8 @@ class Solver:
 
         return ee_res
 
-
+    
+    
     def solve_TI_stoch_ram(self):
         """
         This function solves the stochastic ramsey model using Time Iteration algorithm
@@ -205,12 +144,15 @@ class Solver:
 
         # Initializing agents
         firm = Firm()
-        #household = Household()
+        household = Household()
+        
         ## Guess for consumption
         c_guess = np.zeros((nk,nz))
         c_guess[:,:] = ss.c_ss
 
         # Main Loop
+        ## Initializing system of equations
+        eqs = EquationSystem()
         c_pol = np.zeros((nk,nz))
 
         for iter0 in range(maxiter):
@@ -219,7 +161,8 @@ class Solver:
                 # for all stochastic shocks there needs to be a corresponding policy
                 for iz in range(nz):
                     # find c_t s.t. the euler equation is equal to 0 use c_guess as c_t 
-                    root = optimize.fsolve(self.sys_of_eqs_stoch_ram, c_guess[ik,iz], args=(c_guess, kgrid[ik], zgrid[iz], iz, nz, kgrid, zgrid, P))
+                    #root = optimize.fsolve(self.sys_of_eqs_stoch_ram, c_guess[ik,iz], args=(c_guess, kgrid[ik], zgrid[iz], iz, nz, kgrid, zgrid, P))
+                    root = optimize.fsolve(eqs.sys_of_eqs_stoch_ram, c_guess[ik,iz], args=(c_guess, kgrid[ik], zgrid[iz], iz, nz, kgrid, zgrid, P, ss, param, firm, household))
                     # set the c_t from the root finding process as the new guess
                     c_pol[ik,iz] = root
 
@@ -245,6 +188,8 @@ class Solver:
             kp_pol[:,iz] = firm.f(zgrid[iz], kgrid, param) + (1.0-delta)*kgrid - c_pol[:,iz]
 
         return kgrid, kp_pol, c_pol
+    
+
 
 
     def solve_TI_rbc(self):
@@ -308,7 +253,8 @@ class Solver:
         n_guess = np.zeros((nk,nz))
         n_guess[:,:] = ss.n_ss
         n_pol = np.zeros((nk, nz))
-
+        ## Initializing system of equations
+        eqs = EquationSystem()
         for iter0 in range(maxiter):
             # iterate through all the points in the capital grid to find the optimal corresponding labour supply
             for ik in range(nk):
@@ -317,7 +263,7 @@ class Solver:
                     # the optimal labour supply is the root of the sys of equation resulting from the FOCs
                     # start the root finding algorithm with n_guess
                     root = optimize.fsolve(
-                        self.sys_of_eqs_rbc, n_guess[ik, iz], args=(n_guess, kgrid[ik], zgrid[iz], iz, nz, kgrid, zgrid, P, ss, param, firm, household)
+                        eqs.sys_of_eqs_rbc, n_guess[ik, iz], args=(n_guess, kgrid[ik], zgrid[iz], iz, nz, kgrid, zgrid, P, ss, param, firm, household)
                     )
                     n_pol[ik, iz] = root
 
@@ -345,6 +291,193 @@ class Solver:
             kp_pol[:, iz] = invest + (1.0 - delta) * kgrid
         
         return kgrid, zgrid, P, kp_pol, n_pol, c_pol, wage, outp, invest
+
+    @staticmethod
+    def basefun(grid_x,npx,x):
+
+        vals = np.zeros(2)
+        inds = np.zeros(2,dtype=int)
+
+        jl=0
+        ju=npx-1
+
+        for iter0 in range(1000):
+
+            if (ju-jl<=1):
+                break
+
+            jm=int(np.round((ju+jl)/2))
+
+            if (x>=grid_x[jm]):
+                jl=jm
+            else:
+                ju=jm
+
+        i=jl+1
+        vals[1]=(x-grid_x[i-1])/(grid_x[i]-grid_x[i-1])
+        vals[0]=( grid_x[i]-x )/(grid_x[i]-grid_x[i-1])
+        inds[1]=i
+        inds[0]=i-1
+
+        return vals,inds
+    @staticmethod
+    def aggregation_sparse(afgrid, agrid, a_endo, naf, neta, yprob, na):
+        AA = ssp.lil_matrix((naf * neta, naf * neta))
+        AA1 = ssp.lil_matrix((naf, naf))
+        for j1 in range(neta):
+            for i1 in range(naf):
+                # When the borrowing constraint is binding:
+                if afgrid[i1] < a_endo[0, j1]:
+                    AA1[i1, 0] = 1.0
+                # When households hit the upper bound:
+                elif afgrid[i1] > a_endo[na - 1, j1]:
+                    AA1[i1, naf - 1] = 1.0
+                else:
+                    # Interpolate a' on the finer grid
+                    a_endo_int = np.interp(afgrid[i1], a_endo[:, j1], agrid)
+                    vals, inds = basefun(afgrid, naf, a_endo_int)
+                    AA1[i1, inds[0]] = vals[0]
+                    AA1[i1, inds[1]] = vals[1]
+            for j2 in range(neta):
+                AA[j1 * naf: naf * (j1 + 1), j2 * naf: naf * (j2 + 1)] = AA1 * yprob[j1, j2]
+            AA1 = ssp.lil_matrix((naf, naf))
+        S, U = ssp.linalg.eigs(AA.T)
+        distt = np.array(U[:, np.where(np.abs(S - 1.) < 1e-8)[0][0]].flat)
+        distt = distt / np.sum(distt)
+        pdf = np.reshape(distt, (neta, naf)).real
+        return pdf
+    
+    def solve_aiyagari_EGM(self):
+                ## Pre-Allocation
+        param = Params(alpha = 0.33,
+                     beta = 0.99,
+                     delta = 0.025,
+                     )
+        ss = Steady_state(param, labour= True)
+        # Initializing Grid
+        grid = Grid_data(ss)
+        nz = grid.nz
+        nk = grid.nk
+        agrid, zgrid, P = grid.setup_grid_TI()
+        
+        # Initializing required parameters
+        alpha = param.alpha
+        delta = param.delta
+        gamma = param.gamma
+        sigma = param.sigma
+        chi = ss.chi
+        maxiter = param.maxiter
+        tol = param.tol
+
+        # Initializing agents
+        firm = Firm(labour = True)
+        household = Household(labour = True)
+
+
+        # Find the stationary distribution of the process
+        S,U = eig(P.T)
+        pistar = np.array(U[:, np.where(np.abs(S - 1.) < 1e-8)[0][0]].flat)
+        pistar = pistar / np.sum(pistar)
+
+        # Aggregate labor supply
+        labor = zgrid@pistar
+
+
+        #==============================================================================#
+        #                       Computation of equilibrium
+        #==============================================================================#
+
+        # Preallocation
+        c_guess = np.zeros((na,neta))
+        c_new = np.zeros((na,neta))
+        a_endo = np.zeros((na,neta))
+        a_star = np.zeros(neta)
+        con = np.zeros((na,neta))
+
+        pdf = np.zeros((naf,neta))
+        cdf = np.zeros((naf,neta))
+
+        # Set bounds for bisection algorithm
+        r_bracket = np.array((-delta,(1-betta)/betta))
+        # Set a guess for the interest rate
+        r_guess = (r_bracket[0]+r_bracket[1])/2
+
+        ## MAIN ALGORITHM ##
+
+        for iter0 in range(maxiter):
+
+            # Set a guess for the interest rate
+            irate = r_guess
+
+            # Calculate agg. capital and wage rate through equations (1) and (2)
+            cap = ((labor**(alpha-1.0)*(delta + irate))/alpha)**(1.0/(alpha-1.0))
+            wage = (1.0-alpha)*cap**alpha*labor**(-alpha)
+
+            # Set a guess for the consumption policy
+            for iy in range(neta):
+                c_guess[:,iy] = irate*agrid+wage*zgrid[iy]
+
+            # Solve HH problem by EGM
+            for iterHH in range(maxiter):
+
+                # Step 1: Determine the grid point(s) where the borrowing constraint is just binding
+                for ia in range(na):
+                    for iy in range(neta):
+                        # Calculate the RHS of euler equation which is the discounted Marginal utility of consumption tomorrow
+                        rhs = betta*(1.0+irate)*c_guess[ia,:]**(-gam)@np.transpose(yprob[iy,:])
+                        # Calculate the implied consumption (as a function of a')
+                        c_new[ia,iy] = rhs**(-1.0/gam)
+                        # Use the budget constraint to calculate the implied savings today (as a function of a')
+                        a_endo[ia,iy] = (agrid[ia]+c_new[ia,iy]-wage*y[iy])/(1.0+irate)
+
+                        # Calculate savings today that correspond to a choice of a'=0
+                        if (ia==0):
+                            a_star[iy] = a_endo[0,iy]
+
+                # Step 2: Retrieve an updated guess for the consumption policy
+                for ia in range(na):
+                    for iy in range(neta):
+                        # In this case, use the budget constraint to determine consumption
+                        if (agrid[ia]<a_star[iy]):
+                            con[ia,iy] = (1.0+irate)*agrid[ia]+wage*y[iy]
+                        else:
+                            # In this case, use linear interpolation to determine consumption
+                            con[ia,iy] = np.interp(agrid[ia],a_endo[:,iy],c_new[:,iy])
+
+                metricEGM = np.amax(np.abs(con-c_guess))
+
+                tolEGM = epsilon*(1.0+np.amax(np.amax(np.abs(c_guess))))
+
+                if (metricEGM<tolEGM):
+                    break
+
+
+                # The new guess for the consumption policy
+                c_guess = np.copy(con)
+                #c_guess[:] = con
+
+            # Determine the stationary distribution
+            pdf = aggregation_sparse(afgrid,agrid,a_endo,naf,neta)
+
+            # Determine the sum of savings held by the household sector
+            sav = np.sum(afgrid*np.sum(pdf,0))
+
+            # Update the interest rate guess (Bisection)
+            if (cap-sav<0.0):
+                r_bracket[1]=irate
+            else:
+                r_bracket[0]=irate
+
+            # Check stopping criterion:
+            tolOuter = epsilon*(1.0 + np.abs(r_bracket[1])+ np.abs(r_bracket[0]))
+
+            print('interest rate guess: ',irate*100,' excess demand for capital: ',cap-sav)
+
+            if (r_bracket[1]-r_bracket[0]<tolOuter or abs(cap-sav)< epsilon):
+                break
+
+            r_guess = (r_bracket[0]+r_bracket[1])/2
+        return r_guess
 
 
     def solve_neural_network(self):
